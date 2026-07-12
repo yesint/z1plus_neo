@@ -1,0 +1,20 @@
+[package]
+name = "entangl_rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Semen Yesylevskyy <semen.yesylevskyy@receptor.ai>"]
+description = "Geometric topological analysis of polymer entanglements (Z1-style shortest multiple disconnected path), built on molar"
+license = "Artistic-2.0"
+
+[dependencies]
+molar = { path = "/home/semen/work/Projects/molar/molar" }
+nalgebra = ">=0.33"
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

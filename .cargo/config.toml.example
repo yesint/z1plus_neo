@@ -1,0 +1,16 @@
+[env]
+#----------------------------------------------
+# Copy to .cargo/config.toml and set to your local paths to build molar's
+# Gromacs plugin (enables reading .tpr topology: bonds, molecules).
+# If these are unset, entangl_rs still builds and works with gro/xtc etc.,
+# but .tpr topology and grouping=molecule are unavailable.
+#----------------------------------------------
+
+# Location of Gromacs source tree
+GROMACS_SOURCE_DIR = "/path/to/gromacs-source"
+
+# Location of Gromacs *build* directory (for generated headers)
+GROMACS_BUILD_DIR = "/path/to/gromacs-source/build"
+
+# Location of installed gromacs libraries (libgromacs.so, libmuparser.so)
+GROMACS_LIB_DIR = "/path/to/gromacs-install/lib64"

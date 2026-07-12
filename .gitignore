@@ -1,0 +1,3 @@
+/target
+# Machine-specific gromacs paths; use .cargo/config.toml.example as a template.
+/.cargo/config.toml
