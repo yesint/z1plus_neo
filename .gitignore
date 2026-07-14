@@ -1,3 +1,10 @@
 /target
 # Machine-specific gromacs paths; use .cargo/config.toml.example as a template.
 /.cargo/config.toml
+
+# Local working data, references and notes (not part of the published crate).
+/NPT6*
+/Z1.pdf
+/Z1+.zip
+/Z1plus-code-main.zip
+/CLAUDE.md
