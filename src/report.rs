@@ -5,7 +5,23 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use crate::z1::FrameResult;
+use molar::prelude::Float;
+
+/// Per-chain result for one analyzed frame.
+#[derive(Clone, Debug)]
+pub struct ChainResult {
+    pub n_beads: usize,
+    pub is_true: bool,
+    pub z: usize,
+    pub lpp: Float,
+    pub ree: Float,
+}
+
+/// Result for one analyzed frame (all chains).
+#[derive(Clone, Debug)]
+pub struct FrameResult {
+    pub chains: Vec<ChainResult>,
+}
 
 /// The four single-configuration entanglement-length estimators reported by
 /// Z1+ (Hoy, Foteinopoulou & Kröger, Phys. Rev. E 80, 031803).

@@ -11,12 +11,7 @@
 
 pub mod cells;
 pub mod chain;
-pub mod geom;
-pub mod grid;
-pub mod linking;
 pub mod pool;
 pub mod report;
 pub mod sweep;
-pub mod z1;
 pub mod z1geom;
-pub mod z1plus;

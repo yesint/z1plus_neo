@@ -10,11 +10,10 @@ use anyhow::{anyhow, Result};
 use clap::Args;
 use molar::prelude::*;
 
-use entangl_rs::chain::{build_chain_indices, frame_from_state, write_z1, Grouping};
-use entangl_rs::report::Reporter;
 use entangl_rs::cells::BoxDims;
+use entangl_rs::chain::{build_chain_indices, frame_from_state, write_z1, Grouping};
+use entangl_rs::report::{ChainResult, FrameResult, Reporter};
 use entangl_rs::sweep::analyze_chains;
-use entangl_rs::z1::{ChainResult, FrameResult};
 
 #[derive(Args, Debug, Clone)]
 struct Flags {

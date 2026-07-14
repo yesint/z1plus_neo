@@ -1,165 +1,101 @@
-//! `z1run` — run the entanglement analysis directly on Z1-formatted files.
+//! `z1run` — run the SMDP entanglement analysis directly on Z1-formatted files.
 //!
-//! This bypasses `molar` I/O and is used to validate `entangl_rs` against the
-//! reference Z1+ binary on the published benchmark configurations.
+//! Bypasses `molar` trajectory I/O and runs the *same* `sweep` core as the main
+//! `entangl_rs` binary, so the published benchmark configurations can be checked
+//! against the reference Z1+ binary on identical input.
 //!
-//! Usage: `z1run [--self] file1.Z1 [file2.Z1 ...]`
+//! Usage: `z1run [--thickness T] [--lmax-factor F] file1.Z1 [file2.Z1 ...]`
 
 use anyhow::Result;
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use std::path::PathBuf;
 
+use entangl_rs::cells::BoxDims;
 use entangl_rs::chain::read_z1;
 use entangl_rs::report::z1_estimators;
-use entangl_rs::z1::{analyze_frame, Options, MIN_TRUE_CHAIN};
-
-#[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
-enum Algorithm {
-    /// Previous remove/slide implementation.
-    Legacy,
-    /// Insertion-based implementation of the Z1+ core.
-    Z1Plus,
-}
+use entangl_rs::sweep::{analyze_chains, MIN_TRUE_CHAIN};
 
 #[derive(Parser, Debug)]
-#[command(name = "z1run", about = "entangl_rs on Z1-formatted benchmark files")]
+#[command(name = "z1run", about = "entangl_rs SMDP core on Z1-formatted benchmark files")]
 struct Cli {
     /// Z1-formatted configuration files
     #[arg(required = true)]
     files: Vec<PathBuf>,
 
-    /// Minimizer implementation
-    #[arg(long, value_enum, default_value_t = Algorithm::Legacy)]
-    algorithm: Algorithm,
+    /// Chain thickness (Z1+ `thickness`; contacts rest this far off obstacles)
+    #[arg(long = "thickness", default_value_t = 0.002)]
+    thickness: f64,
 
-    /// Also detect self-entanglements
-    #[arg(long = "self", default_value_t = false)]
-    self_entanglement: bool,
+    /// lmax factor (Z1+ `lmax_factor`; lmax = factor * max initial bond)
+    #[arg(long = "lmax-factor", default_value_t = 1.0)]
+    lmax_factor: f64,
 
     /// Safety cap on minimization sweeps
-    #[arg(long = "max-sweeps", default_value_t = 2000)]
+    #[arg(long = "max-sweeps", default_value_t = 5000)]
     max_sweeps: usize,
-
-    /// Max segment length (ghost-node cap). Default: 0.2 * min box extent.
-    #[arg(long = "lmax")]
-    lmax: Option<f32>,
-
-    /// Kink angle threshold in degrees
-    #[arg(long = "kink-deg", default_value_t = 2.9)]
-    kink_deg: f32,
-
-    /// Disable node sliding (removal only; diagnostic)
-    #[arg(long = "no-slide", default_value_t = false)]
-    no_slide: bool,
-
-    /// Force brute-force neighbor scan (disable spatial grid; diagnostic)
-    #[arg(long = "brute", default_value_t = false)]
-    brute: bool,
-
-    /// Disable node removal (slide only; diagnostic)
-    #[arg(long = "no-remove", default_value_t = false)]
-    no_remove: bool,
-
-    /// Report total |Gauss linking| before/after minimization (topology check)
-    #[arg(long = "check-linking", default_value_t = false)]
-    check_linking: bool,
 
     /// Print per-chain (index, N, Ree, Lpp, Z)
     #[arg(long = "dump", default_value_t = false)]
     dump: bool,
 
-    /// Chain thickness (min gap kept from other chains)
-    #[arg(long = "thickness", default_value_t = 0.01)]
-    thickness: f32,
-
-    /// Use chord-foot tightening (Z1-style maximal displacement) vs wrap-point
-    #[arg(long = "chord-slide", default_value_t = false)]
-    chord_slide: bool,
-
-    /// Use thickness-fat removal instead of strict (diagnostic)
-    #[arg(long = "fat-removal", default_value_t = false)]
-    fat_removal: bool,
+    /// Also detect self-entanglements (not yet supported by the core)
+    #[arg(long = "self", default_value_t = false)]
+    self_entanglement: bool,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    if std::env::var("ENTANGL_VERIFY").is_ok() {
-        entangl_rs::z1::VERIFY.with(|v| v.set(true));
+    if cli.self_entanglement {
+        eprintln!("warning: --self is not supported by the current core; ignoring");
     }
-    let opts = Options {
-        self_entanglement: cli.self_entanglement,
-        max_sweeps: cli.max_sweeps,
-        kink_angle: cli.kink_deg.to_radians() as molar::prelude::Float,
-        lmax: cli
-            .lmax
-            .map(|x| x as molar::prelude::Float)
-            .unwrap_or(molar::prelude::Float::INFINITY),
-        slide: !cli.no_slide,
-        use_grid: !cli.brute,
-        remove: !cli.no_remove,
-        thickness: cli.thickness as molar::prelude::Float,
-        chord_slide: cli.chord_slide,
-        strict_removal: !cli.fat_removal,
-    };
 
     for path in &cli.files {
         let cfg = read_z1(path)?;
         let n_chains = cfg.chains.len();
         let ext = cfg.pbox.get_box_extents();
-
-        if cli.check_linking && cli.algorithm == Algorithm::Legacy {
-            let lk_before = entangl_rs::linking::total_abs_linking(&cfg.chains, Some(&cfg.pbox));
-            let minimized = entangl_rs::z1::minimize_chains(&cfg.chains, Some(&cfg.pbox), opts);
-            let lk_after = entangl_rs::linking::total_abs_linking(&minimized, Some(&cfg.pbox));
-            println!(
-                "  linking: before={lk_before:.3} after={lk_after:.3}  (drop => chains crossed)"
-            );
-        }
+        let bx = BoxDims {
+            l: [ext.x as f64, ext.y as f64, ext.z as f64],
+        };
+        // The sweep core works in f64 `[x,y,z]` coordinates.
+        let chains: Vec<Vec<[f64; 3]>> = cfg
+            .chains
+            .iter()
+            .map(|c| c.iter().map(|p| [p.x as f64, p.y as f64, p.z as f64]).collect())
+            .collect();
 
         let t0 = std::time::Instant::now();
-        let fr = match cli.algorithm {
-            Algorithm::Legacy => analyze_frame(&cfg.chains, Some(&cfg.pbox), opts),
-            Algorithm::Z1Plus => entangl_rs::z1plus::analyze_frame(
-                &cfg.chains,
-                Some(&cfg.pbox),
-                entangl_rs::z1plus::Options {
-                    self_entanglement: cli.self_entanglement,
-                    max_sweeps: cli.max_sweeps,
-                    thickness: cli.thickness as f64,
-                    lmax: cli.lmax.map(f64::from).unwrap_or(f64::INFINITY),
-                },
-            ),
-        };
+        let stats = analyze_chains(&chains, bx, cli.thickness, cli.lmax_factor, cli.max_sweeps);
         let elapsed = t0.elapsed();
 
-        // Aggregate over true chains.
+        // Aggregate over true chains. `stats` items are
+        // (n_beads, is_true, z, lpp, ree).
         let mut n_true = 0usize;
         let mut violations = 0usize; // chains with Lpp < Ree (impossible => bug)
         let (mut sum_n, mut sum_z, mut sum_lpp, mut sum_lpp2, mut sum_ree2) =
             (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
-        for c in &fr.chains {
-            if c.n_beads < MIN_TRUE_CHAIN {
+        for &(n_beads, _is_true, z, lpp, ree) in &stats {
+            if n_beads < MIN_TRUE_CHAIN {
                 continue;
             }
             n_true += 1;
-            sum_n += c.n_beads as f64;
-            sum_z += c.z as f64;
-            sum_lpp += c.lpp as f64;
-            sum_lpp2 += (c.lpp as f64).powi(2);
-            sum_ree2 += (c.ree as f64) * (c.ree as f64);
-            if c.lpp + 1.0e-3 < c.ree {
+            sum_n += n_beads as f64;
+            sum_z += z as f64;
+            sum_lpp += lpp;
+            sum_lpp2 += lpp * lpp;
+            sum_ree2 += ree * ree;
+            if lpp + 1.0e-3 < ree {
                 violations += 1;
             }
         }
         if cli.dump {
-            for (idx, c) in fr.chains.iter().enumerate() {
+            for (idx, &(n_beads, _is_true, z, lpp, ree)) in stats.iter().enumerate() {
                 println!(
                     "  chain {:>3}: N={:>4} Ree={:>8.3} Lpp={:>8.3} Z={}",
                     idx + 1,
-                    c.n_beads,
-                    c.ree,
-                    c.lpp,
-                    c.z
+                    n_beads,
+                    ree,
+                    lpp,
+                    z
                 );
             }
         }
@@ -185,7 +121,11 @@ fn main() -> Result<()> {
             estimators.ne_cc,
             estimators.ne_mc,
             elapsed,
-            if violations > 0 { format!("  [!! {violations} Lpp<Ree violations]") } else { String::new() }
+            if violations > 0 {
+                format!("  [!! {violations} Lpp<Ree violations]")
+            } else {
+                String::new()
+            }
         );
     }
 
