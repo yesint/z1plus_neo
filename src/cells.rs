@@ -195,6 +195,41 @@ impl Cells {
     /// Call `f(id)` for every node in a bin around `p` (Mif stencil, toroidal
     /// wrap). May include the query node itself and duplicates only across
     /// distinct cells (never within a cell); callers filter by id.
+    /// Cell coordinates of a position (public wrapper for stencil dedup).
+    #[inline]
+    pub fn cell_of_pos(&self, p: [f64; 3]) -> [i32; 3] {
+        self.cell_of(p)
+    }
+
+    /// Cached cell coordinates of a live id.
+    #[inline]
+    pub fn cell_of_id(&self, id: Id) -> [i32; 3] {
+        self.id_in_cell[id as usize]
+    }
+
+    /// Is cell `cc` inside the query stencil (Mif, toroidal) centred on `c0`?
+    /// Used to deduplicate a segment reachable from both endpoints: if the other
+    /// endpoint is itself in the stencil it will be visited as a candidate and
+    /// emit the segment, so this endpoint can skip it without losing coverage.
+    #[inline]
+    pub fn in_stencil(&self, c0: [i32; 3], cc: [i32; 3]) -> bool {
+        for k in 0..3 {
+            let mut hit = false;
+            let mut d = self.mif[k][0];
+            while d <= self.mif[k][1] {
+                if wrap(c0[k] + d, self.m[k]) == cc[k] {
+                    hit = true;
+                    break;
+                }
+                d += 1;
+            }
+            if !hit {
+                return false;
+            }
+        }
+        true
+    }
+
     pub fn for_each_candidate<F: FnMut(Id)>(&self, p: [f64; 3], mut f: F) {
         let c0 = self.cell_of(p);
         for dx in self.mif[0][0]..=self.mif[0][1] {

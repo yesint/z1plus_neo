@@ -330,6 +330,19 @@ impl Network {
         // min-image A,C about B so the triangle is a single image
         let pa_i = image_of(self.bx, pb, pa);
         let pc_i = image_of(self.bx, pb, pc);
+        // Triangle bounding sphere about its centroid. get_t1_t2_ts accepts only
+        // segments that truly intersect triangle (A,B,C); any intersection point
+        // lies inside the triangle, so within `r_tri` (max centroid-to-vertex
+        // distance) of the centroid. A segment whose closest approach to the
+        // centroid exceeds r_tri therefore cannot intersect — a necessary
+        // condition, so rejecting on it is exact (result-preserving). The tiny
+        // relative margin guards the strict boundary against round-off.
+        let cen = scale(vadd(vadd(pa_i, pb), pc_i), 1.0 / 3.0);
+        let d2c = |q: V3| {
+            let v = sub(q, cen);
+            dot(v, v)
+        };
+        let r_tri2 = d2c(pa_i).max(d2c(pb)).max(d2c(pc_i)) * (1.0 + 1e-6) + 1e-18;
         let mut best_cos = -10.0;
         let mut best: Option<(Id, Id, Pierce)> = None;
         let mut consider = |s1: Id, s2: Id, this: &Self| {
@@ -339,6 +352,10 @@ impl Network {
             }
             let ps1 = image_of(this.bx, pb, this.pool.x[s1 as usize]);
             let ps2 = image_of(this.bx, ps1, this.pool.x[s2 as usize]);
+            // cheap bounding-sphere reject before the full pierce test
+            if point_seg_dist2(cen, ps1, ps2) > r_tri2 {
+                return;
+            }
             if let Some(pier) = get_t1_t2_ts(ps1, ps2, pa_i, pb, pc_i) {
                 if pier.cos > best_cos && pier.cos < 1.0 {
                     best_cos = pier.cos;
@@ -350,6 +367,7 @@ impl Network {
         let self_ent = self.params.self_entanglement;
         let mut cand: Vec<Id> = Vec::new();
         self.cells.for_each_candidate(pb, |o| cand.push(o));
+        let c0 = self.cells.cell_of_pos(pb);
         for o in cand {
             let oc = self.pool.chain_for_id[o as usize];
             if oc == 0 {
@@ -358,12 +376,19 @@ impl Network {
             if oc == chain && !self_ent {
                 continue;
             }
+            // Each obstacle segment is reachable from both endpoints. Emit
+            // segment (o, next) here; emit (prev, o) only when `prev` is outside
+            // this stencil — otherwise `prev` is itself a candidate and will emit
+            // (prev, o) as its own next-segment. Exact stencil coverage, no
+            // double-testing.
             let nx = self.pool.nextid[o as usize];
             if nx != crate::pool::NULL {
                 consider(o, nx, self);
             }
             let pv = self.pool.previd[o as usize];
-            if pv != crate::pool::NULL {
+            if pv != crate::pool::NULL
+                && !self.cells.in_stencil(c0, self.cells.cell_of_id(pv))
+            {
                 consider(pv, o, self);
             }
         }
@@ -913,6 +938,20 @@ fn point_seg_dist(p: V3, a: V3, b: V3) -> f64 {
     }
     let t = (dot(sub(p, a), ab) / d).clamp(0.0, 1.0);
     norm(sub(p, vadd(a, scale(ab, t))))
+}
+
+/// Squared distance from `p` to the finite segment a..b (no sqrt; hot path).
+#[inline]
+fn point_seg_dist2(p: V3, a: V3, b: V3) -> f64 {
+    let ab = sub(b, a);
+    let d = dot(ab, ab);
+    if d <= 1e-30 {
+        let pa = sub(p, a);
+        return dot(pa, pa);
+    }
+    let t = (dot(sub(p, a), ab) / d).clamp(0.0, 1.0);
+    let dv = sub(p, vadd(a, scale(ab, t)));
+    dot(dv, dv)
 }
 
 /// Sentinel returned by `dist_point_finite_line` when the foot of the
