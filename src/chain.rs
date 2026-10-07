@@ -72,7 +72,7 @@ pub fn build_chain_indices(sys: &System, sel_str: &str, group: Grouping) -> Resu
             .collect(),
         Grouping::Bonds => {
             let sel_idx: Vec<usize> = bound.iter_index().collect();
-            chains_from_bonds(&sel_idx, &sys.topology().bonds)?
+            chains_from_bonds(&sel_idx, sys.topology().bonds.iter().map(|b| b.pair()))?
         }
         Grouping::Molecule => {
             let sel_idx: Vec<usize> = bound.iter_index().collect();
@@ -103,15 +103,17 @@ pub fn build_chain_indices(sys: &System, sel_str: &str, group: Grouping) -> Resu
 /// Build chains as connected components of the bond graph (restricted to the
 /// selected beads), each ordered by walking the linear backbone from an
 /// endpoint. This is robust to how a `.tpr` groups molecules into blocks.
-fn chains_from_bonds(sel_idx: &[usize], bonds: &[Bond]) -> Result<Vec<Vec<usize>>> {
+fn chains_from_bonds(
+    sel_idx: &[usize],
+    bonds: impl IntoIterator<Item = [usize; 2]>,
+) -> Result<Vec<Vec<usize>>> {
     let sel_set: HashSet<usize> = sel_idx.iter().copied().collect();
 
     let mut adj: HashMap<usize, Vec<usize>> = HashMap::with_capacity(sel_set.len());
     for &a in sel_idx {
         adj.entry(a).or_default();
     }
-    for b in bonds {
-        let [i, j] = b.pair();
+    for [i, j] in bonds {
         if sel_set.contains(&i) && sel_set.contains(&j) {
             adj.get_mut(&i).unwrap().push(j);
             adj.get_mut(&j).unwrap().push(i);

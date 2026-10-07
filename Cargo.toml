@@ -7,7 +7,7 @@ description = "Geometric topological analysis of polymer entanglements (Z1-style
 license = "Artistic-2.0"
 
 [dependencies]
-molar = { path = "/home/semen/work/Projects/molar/molar" }
+molar = { git = "https://github.com/yesint/molar.git", features = ["f64"] }
 nalgebra = ">=0.33"
 clap = { version = "4.5", features = ["derive"] }
 anyhow = "1"

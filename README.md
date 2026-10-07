@@ -61,8 +61,13 @@ cubic box ~19 nm), same input to both codes over 11 frames (0–100 ns):
 ## Build
 
 ```sh
-cargo build --release --offline --locked
+cargo build --release --locked
 ```
+
+`molar` is fetched from its Git repository; `Cargo.lock` pins the tested
+revision. After the initial download, builds can also use `--offline`.
+The `f64` feature keeps input geometry in double precision, matching the SMDP
+core and preserving the Z1 benchmark regression checks.
 
 Reading a GROMACS `.tpr` topology (for bond-based chain grouping) needs `molar`'s
 gromacs plugin, which requires `.cargo/config.toml` with `GROMACS_SOURCE_DIR` /
@@ -75,7 +80,16 @@ gromacs plugin, which requires `.cargo/config.toml` with `GROMACS_SOURCE_DIR` /
 ```sh
 # any structure + trajectory molar reads: gro / xtc / trr / pdb / tpr
 entangl_rs -f system.tpr traj.xtc -g bonds -o out
+
+# single LAMMPS data snapshot (molecular/bond/angle atom style)
+entangl_rs -f tests/rouse_polymers_20chains_20bonds_wrapped_images.data --use_struct_file -o out
 ```
+
+LAMMPS `.data` input supports unwrapped coordinates and wrapped coordinates
+with image flags. Bonds drive automatic chain grouping. For LJ input, molar
+uses a default distance scale of 1 nm per input unit; reported lengths retain
+the input's numerical scale. The two LAMMPS fixtures are checked for matching
+topology, periodic coordinates, and CLI analysis results.
 
 Key options:
 
